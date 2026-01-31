@@ -79,15 +79,23 @@ class TestTelegramNotifier:
 
     @pytest.mark.asyncio
     async def test_test_connection_success(self, mocker):
-        """Test successful connection test."""
-        mock_response = mocker.MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"ok": True, "result": {"username": "test_bot"}}
+        """Test successful connection test with test message."""
+        mock_get_response = mocker.MagicMock()
+        mock_get_response.status_code = 200
+        mock_get_response.json.return_value = {
+            "ok": True,
+            "result": {"username": "test_bot"},
+        }
+
+        mock_post_response = mocker.MagicMock()
+        mock_post_response.status_code = 200
+        mock_post_response.json.return_value = {"ok": True, "result": {}}
 
         mock_client = mocker.MagicMock()
         mock_client.__aenter__ = mocker.AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = mocker.AsyncMock(return_value=None)
-        mock_client.get = mocker.AsyncMock(return_value=mock_response)
+        mock_client.get = mocker.AsyncMock(return_value=mock_get_response)
+        mock_client.post = mocker.AsyncMock(return_value=mock_post_response)
 
         mocker.patch("httpx.AsyncClient", return_value=mock_client)
 
@@ -95,10 +103,16 @@ class TestTelegramNotifier:
         result = await notifier.test_connection()
 
         assert result is True
+        mock_client.get.assert_called_once()
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        assert "sendMessage" in call_args[0][0]
+        payload = call_args[1]["json"]
+        assert "테스트 성공" in payload["text"]
 
     @pytest.mark.asyncio
-    async def test_test_connection_failure(self, mocker):
-        """Test failed connection test."""
+    async def test_test_connection_failure_invalid_token(self, mocker):
+        """Test failed connection test with invalid token."""
         mock_response = mocker.MagicMock()
         mock_response.status_code = 401
         mock_response.json.return_value = {"ok": False}
@@ -114,3 +128,37 @@ class TestTelegramNotifier:
         result = await notifier.test_connection()
 
         assert result is False
+        mock_client.get.assert_called_once()
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_test_connection_failure_send_message(self, mocker):
+        """Test connection test fails when test message cannot be sent."""
+        mock_get_response = mocker.MagicMock()
+        mock_get_response.status_code = 200
+        mock_get_response.json.return_value = {
+            "ok": True,
+            "result": {"username": "test_bot"},
+        }
+
+        mock_post_response = mocker.MagicMock()
+        mock_post_response.status_code = 400
+        mock_post_response.json.return_value = {
+            "ok": False,
+            "description": "Bad Request: chat not found",
+        }
+
+        mock_client = mocker.MagicMock()
+        mock_client.__aenter__ = mocker.AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = mocker.AsyncMock(return_value=None)
+        mock_client.get = mocker.AsyncMock(return_value=mock_get_response)
+        mock_client.post = mocker.AsyncMock(return_value=mock_post_response)
+
+        mocker.patch("httpx.AsyncClient", return_value=mock_client)
+
+        notifier = TelegramNotifier(bot_token="test_token", chat_id="invalid_chat")
+        result = await notifier.test_connection()
+
+        assert result is False
+        mock_client.get.assert_called_once()
+        mock_client.post.assert_called_once()

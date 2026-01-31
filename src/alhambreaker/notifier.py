@@ -128,11 +128,25 @@ class TelegramNotifier:
             return data
 
     async def test_connection(self) -> bool:
-        """Test the Telegram bot connection.
+        """Test the Telegram bot connection and send a test message.
 
         Returns:
-            True if connection is successful.
+            True if connection is successful and test message was sent.
         """
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{self._api_base}/getMe")
-            return response.status_code == 200 and response.json().get("ok", False)
+            if not (response.status_code == 200 and response.json().get("ok", False)):
+                return False
+
+            bot_info = response.json().get("result", {})
+            bot_name = bot_info.get("username", "Unknown")
+            logger.info(f"Bot connected: @{bot_name}")
+
+            test_message = "🔔 AlhamBreaker 텔레그램 연결 테스트 성공!\n\n봇이 정상적으로 작동합니다."
+            try:
+                await self._send_message(test_message)
+                logger.info("Test message sent successfully!")
+                return True
+            except NotificationError as e:
+                logger.error(f"Failed to send test message: {e}")
+                return False
