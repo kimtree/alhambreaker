@@ -109,14 +109,13 @@ uv run python -m alhambreaker --no-headless
 
 ## Scheduled Execution
 
-### Using cron (every 15 minutes)
+### Using cron (every 30 minutes)
 
 ```bash
-# Edit crontab
 crontab -e
 
 # Add this line
-*/15 * * * * cd /path/to/alhambreaker && /path/to/.venv/bin/python -m alhambreaker >> /var/log/alhambreaker.log 2>&1
+*/30 * * * * cd /home/user/alhambreaker && ./.venv/bin/python -m alhambreaker >> ~/alhambreaker.log 2>&1
 ```
 
 ### Using systemd timer
