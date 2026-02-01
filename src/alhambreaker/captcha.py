@@ -19,17 +19,25 @@ class CaptchaError(Exception):
 class CaptchaSolver:
     """Solves reCAPTCHA v2 using 2Captcha service."""
 
-    def __init__(self, api_key: str, timeout: int = 120, poll_interval: int = 5):
+    def __init__(
+        self,
+        api_key: str,
+        timeout: int = 180,
+        poll_interval: int = 5,
+        max_retries: int = 3,
+    ):
         """Initialize the captcha solver.
 
         Args:
             api_key: 2Captcha API key.
             timeout: Maximum time to wait for solution in seconds.
             poll_interval: Time between polling attempts in seconds.
+            max_retries: Maximum number of retries on transient API errors.
         """
         self.api_key = api_key
         self.timeout = timeout
         self.poll_interval = poll_interval
+        self.max_retries = max_retries
 
     async def solve_recaptcha(self, site_key: str, page_url: str) -> str:
         """Solve a reCAPTCHA v2 challenge.
@@ -104,33 +112,54 @@ class CaptchaSolver:
             CaptchaError: If polling fails or times out.
         """
         elapsed = 0
+        consecutive_errors = 0
         # Initial delay before first poll (captcha solving takes time)
         await asyncio.sleep(10)
         elapsed += 10
 
         while elapsed < self.timeout:
-            response = await client.get(
-                f"{TWOCAPTCHA_API_URL}/res.php",
-                params={
-                    "key": self.api_key,
-                    "action": "get",
-                    "id": task_id,
-                    "json": 1,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
+            try:
+                response = await client.get(
+                    f"{TWOCAPTCHA_API_URL}/res.php",
+                    params={
+                        "key": self.api_key,
+                        "action": "get",
+                        "id": task_id,
+                        "json": 1,
+                    },
+                )
+                response.raise_for_status()
+                consecutive_errors = 0  # Reset on success
+                data = response.json()
 
-            if data.get("status") == 1:
-                return data["request"]
+                if data.get("status") == 1:
+                    return data["request"]
 
-            error_text = data.get("request", "")
-            if error_text == "CAPCHA_NOT_READY":
-                logger.debug("Captcha not ready, waiting...")
-                await asyncio.sleep(self.poll_interval)
-                elapsed += self.poll_interval
-            else:
-                raise CaptchaError(f"Captcha solving failed: {error_text}")
+                error_text = data.get("request", "")
+                if error_text == "CAPCHA_NOT_READY":
+                    logger.debug("Captcha not ready, waiting...")
+                    await asyncio.sleep(self.poll_interval)
+                    elapsed += self.poll_interval
+                else:
+                    raise CaptchaError(f"Captcha solving failed: {error_text}")
+
+            except httpx.HTTPStatusError as e:
+                consecutive_errors += 1
+                if consecutive_errors >= self.max_retries:
+                    raise CaptchaError(
+                        f"2Captcha API error after {self.max_retries} retries: {e}"
+                    ) from e
+                # Exponential backoff: 5s, 10s, 20s...
+                backoff_delay = self.poll_interval * (2 ** (consecutive_errors - 1))
+                logger.warning(
+                    "2Captcha API error (attempt %d/%d): %s, retrying in %ds...",
+                    consecutive_errors,
+                    self.max_retries,
+                    e.response.status_code,
+                    backoff_delay,
+                )
+                await asyncio.sleep(backoff_delay)
+                elapsed += backoff_delay
 
         raise CaptchaError(f"Captcha solving timed out after {self.timeout}s")
 

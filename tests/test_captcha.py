@@ -14,18 +14,21 @@ class TestCaptchaSolver:
             api_key="test_key",
             timeout=60,
             poll_interval=3,
+            max_retries=5,
         )
 
         assert solver.api_key == "test_key"
         assert solver.timeout == 60
         assert solver.poll_interval == 3
+        assert solver.max_retries == 5
 
     def test_init_defaults(self):
         """Test solver initialization with defaults."""
         solver = CaptchaSolver(api_key="test_key")
 
-        assert solver.timeout == 120
+        assert solver.timeout == 180
         assert solver.poll_interval == 5
+        assert solver.max_retries == 3
 
     @pytest.mark.asyncio
     async def test_solve_recaptcha_success(self, httpx_mock):
