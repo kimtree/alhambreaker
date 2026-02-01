@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # 2Captcha
     captcha_api_key: str = Field(description="2Captcha API key")
+    captcha_timeout: int = Field(default=180, description="Captcha solving timeout in seconds")
 
     # Telegram
     telegram_bot_token: str = Field(description="Telegram bot token")

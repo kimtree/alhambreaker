@@ -40,7 +40,10 @@ class AlhambraChecker:
             settings: Application settings.
         """
         self.settings = settings
-        self._captcha_solver = CaptchaSolver(settings.captcha_api_key)
+        self._captcha_solver = CaptchaSolver(
+            settings.captcha_api_key,
+            timeout=settings.captcha_timeout,
+        )
         self._notifier = TelegramNotifier(
             settings.telegram_bot_token,
             settings.telegram_chat_id,
