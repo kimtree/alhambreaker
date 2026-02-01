@@ -84,7 +84,8 @@ async def async_main(args: argparse.Namespace) -> int:
             return 1
 
     # Run availability check
-    logging.info("Target date: %s", settings.target_date)
+    dates_str = ", ".join(d.isoformat() for d in settings.target_dates)
+    logging.info("Target dates: %s", dates_str)
     logging.info("Ticket type: %s", settings.ticket_type)
 
     result = await checker.check_availability(dry_run=args.dry_run)
@@ -94,8 +95,15 @@ async def async_main(args: argparse.Namespace) -> int:
         logging.error("Check failed: %s", result.error)
         return 1
 
-    logging.info("Status: %s", result.status.value)
-    logging.info("Available: %s", result.is_available)
+    # Log each date's status
+    for avail in result.results:
+        logging.info("Date %s: %s", avail.date.isoformat(), avail.status.value)
+
+    if result.available_dates:
+        avail_str = ", ".join(a.date.isoformat() for a in result.available_dates)
+        logging.info("Available dates: %s", avail_str)
+    else:
+        logging.info("No available dates found")
 
     if result.notification_sent:
         logging.info("Notification sent!")

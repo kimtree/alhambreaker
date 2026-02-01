@@ -12,11 +12,16 @@ class TestCheckResult:
     """Tests for CheckResult dataclass."""
 
     def test_check_result_available(self):
-        """Test check result for available date."""
-        result = CheckResult(
+        """Test check result for available dates."""
+        available = DateAvailability(
             date=date(2026, 2, 17),
             status=TicketStatus.AVAILABLE,
-            is_available=True,
+            has_link=True,
+        )
+        result = CheckResult(
+            dates=[date(2026, 2, 17)],
+            results=[available],
+            available_dates=[available],
             notification_sent=True,
         )
 
@@ -25,11 +30,16 @@ class TestCheckResult:
         assert result.error is None
 
     def test_check_result_not_available(self):
-        """Test check result for unavailable date."""
-        result = CheckResult(
+        """Test check result for unavailable dates."""
+        unavailable = DateAvailability(
             date=date(2026, 2, 17),
             status=TicketStatus.NOT_AVAILABLE,
-            is_available=False,
+            has_link=False,
+        )
+        result = CheckResult(
+            dates=[date(2026, 2, 17)],
+            results=[unavailable],
+            available_dates=[],
             notification_sent=False,
         )
 
@@ -39,14 +49,40 @@ class TestCheckResult:
     def test_check_result_with_error(self):
         """Test check result with error."""
         result = CheckResult(
-            date=date(2026, 2, 17),
-            status=TicketStatus.UNKNOWN,
-            is_available=False,
-            notification_sent=False,
+            dates=[date(2026, 2, 17)],
             error="Connection failed",
         )
 
         assert result.error == "Connection failed"
+        assert result.is_available is False
+
+    def test_check_result_multiple_dates(self):
+        """Test check result with multiple dates."""
+        avail1 = DateAvailability(
+            date=date(2026, 2, 17),
+            status=TicketStatus.AVAILABLE,
+            has_link=True,
+        )
+        unavail = DateAvailability(
+            date=date(2026, 2, 18),
+            status=TicketStatus.NOT_AVAILABLE,
+            has_link=False,
+        )
+        avail2 = DateAvailability(
+            date=date(2026, 2, 20),
+            status=TicketStatus.LAST_TICKETS,
+            has_link=True,
+        )
+        result = CheckResult(
+            dates=[date(2026, 2, 17), date(2026, 2, 18), date(2026, 2, 20)],
+            results=[avail1, unavail, avail2],
+            available_dates=[avail1, avail2],
+            notification_sent=True,
+        )
+
+        assert result.is_available is True
+        assert len(result.available_dates) == 2
+        assert result.notification_sent is True
 
 
 class TestAlhambraChecker:
@@ -69,8 +105,8 @@ class TestAlhambraChecker:
         mock_browser.inject_captcha_token = mocker.AsyncMock()
         mock_browser.click_go_to_step1 = mocker.AsyncMock()
         mock_browser.navigate_to_month = mocker.AsyncMock()
-        mock_browser.check_date_availability = mocker.AsyncMock(
-            return_value=mock_available_date
+        mock_browser.check_dates_availability = mocker.AsyncMock(
+            return_value=[mock_available_date]
         )
         mock_browser.get_page_url = mocker.AsyncMock(return_value="https://example.com")
 
@@ -99,7 +135,7 @@ class TestAlhambraChecker:
         result = await checker.check_availability()
 
         assert result.is_available is True
-        assert result.status == TicketStatus.AVAILABLE
+        assert len(result.available_dates) == 1
         assert result.notification_sent is True
         mock_notifier.send_availability_alert.assert_called_once()
 
@@ -120,8 +156,8 @@ class TestAlhambraChecker:
         mock_browser.inject_captcha_token = mocker.AsyncMock()
         mock_browser.click_go_to_step1 = mocker.AsyncMock()
         mock_browser.navigate_to_month = mocker.AsyncMock()
-        mock_browser.check_date_availability = mocker.AsyncMock(
-            return_value=mock_unavailable_date
+        mock_browser.check_dates_availability = mocker.AsyncMock(
+            return_value=[mock_unavailable_date]
         )
         mock_browser.get_page_url = mocker.AsyncMock(return_value="https://example.com")
 
@@ -150,7 +186,7 @@ class TestAlhambraChecker:
         result = await checker.check_availability()
 
         assert result.is_available is False
-        assert result.status == TicketStatus.NOT_AVAILABLE
+        assert len(result.available_dates) == 0
         assert result.notification_sent is False
         mock_notifier.send_availability_alert.assert_not_called()
 
@@ -171,8 +207,8 @@ class TestAlhambraChecker:
         mock_browser.inject_captcha_token = mocker.AsyncMock()
         mock_browser.click_go_to_step1 = mocker.AsyncMock()
         mock_browser.navigate_to_month = mocker.AsyncMock()
-        mock_browser.check_date_availability = mocker.AsyncMock(
-            return_value=mock_available_date
+        mock_browser.check_dates_availability = mocker.AsyncMock(
+            return_value=[mock_available_date]
         )
         mock_browser.get_page_url = mocker.AsyncMock(return_value="https://example.com")
 
@@ -203,42 +239,3 @@ class TestAlhambraChecker:
         assert result.is_available is True
         assert result.notification_sent is False
         mock_notifier.send_availability_alert.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_should_notify_available(self, mock_settings):
-        """Test _should_notify returns True for available status."""
-        checker = AlhambraChecker(mock_settings)
-
-        availability = DateAvailability(
-            date=date(2026, 2, 17),
-            status=TicketStatus.AVAILABLE,
-            has_link=True,
-        )
-
-        assert checker._should_notify(availability) is True
-
-    @pytest.mark.asyncio
-    async def test_should_notify_last_tickets(self, mock_settings):
-        """Test _should_notify returns True for last tickets status."""
-        checker = AlhambraChecker(mock_settings)
-
-        availability = DateAvailability(
-            date=date(2026, 2, 17),
-            status=TicketStatus.LAST_TICKETS,
-            has_link=True,
-        )
-
-        assert checker._should_notify(availability) is True
-
-    @pytest.mark.asyncio
-    async def test_should_notify_not_available(self, mock_settings):
-        """Test _should_notify returns False for not available status."""
-        checker = AlhambraChecker(mock_settings)
-
-        availability = DateAvailability(
-            date=date(2026, 2, 17),
-            status=TicketStatus.NOT_AVAILABLE,
-            has_link=False,
-        )
-
-        assert checker._should_notify(availability) is False

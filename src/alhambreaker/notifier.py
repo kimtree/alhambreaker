@@ -1,9 +1,14 @@
 """Telegram notification service."""
 
+from __future__ import annotations
+
 import logging
-from datetime import date
+from typing import TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    from .browser import DateAvailability
 
 __all__ = ["TelegramNotifier", "NotificationError"]
 
@@ -32,35 +37,47 @@ class TelegramNotifier:
 
     async def send_availability_alert(
         self,
-        target_date: date,
-        status: str,
+        available_dates: list[DateAvailability],
         ticket_type: str = "GENERAL",
     ) -> None:
-        """Send an availability alert message.
+        """Send an availability alert message for multiple dates.
 
         Args:
-            target_date: The date that became available.
-            status: The availability status.
+            available_dates: List of available date information.
             ticket_type: Type of ticket.
 
         Raises:
             NotificationError: If sending fails.
         """
+        from .browser import TicketStatus
+
         purchase_url = (
             "https://compratickets.alhambra-patronato.es/reservarEntradas.aspx"
             "?opc=142&gid=432&lg=en-GB&ca=0&m=GENERAL"
         )
 
+        # Format each available date
+        dates_lines = []
+        for avail in available_dates:
+            status_text = (
+                "Available" if avail.status == TicketStatus.AVAILABLE
+                else "Last Tickets!"
+            )
+            dates_lines.append(
+                f"  • {avail.date.strftime('%Y-%m-%d')} - *{status_text}*"
+            )
+
+        dates_text = "\n".join(dates_lines)
         message = (
             f"🎫 *Alhambra Ticket Alert*\n\n"
-            f"📅 Date: *{target_date.strftime('%Y-%m-%d')}*\n"
-            f"🎟️ Type: {ticket_type}\n"
-            f"✅ Status: *{status}*\n\n"
+            f"📅 Available dates:\n{dates_text}\n\n"
+            f"🎟️ Type: {ticket_type}\n\n"
             f"🔗 [Purchase Now]({purchase_url})"
         )
 
         await self._send_message(message, parse_mode="Markdown")
-        logger.info("Availability alert sent for %s", target_date)
+        dates_str = ", ".join(a.date.isoformat() for a in available_dates)
+        logger.info("Availability alert sent for %s", dates_str)
 
     async def send_error_alert(self, error_message: str) -> None:
         """Send an error alert message.

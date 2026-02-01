@@ -385,6 +385,25 @@ class AlhambraBrowser:
             has_link=has_link,
         )
 
+    async def check_dates_availability(
+        self, target_dates: list[date]
+    ) -> list[DateAvailability]:
+        """Check the availability status of multiple dates.
+
+        All dates must be in the same month (already navigated to).
+
+        Args:
+            target_dates: List of dates to check.
+
+        Returns:
+            List of DateAvailability for each date.
+        """
+        results = []
+        for target_date in target_dates:
+            availability = await self.check_date_availability(target_date)
+            results.append(availability)
+        return results
+
     async def get_page_url(self) -> str:
         """Get the current page URL."""
         return self._page.url

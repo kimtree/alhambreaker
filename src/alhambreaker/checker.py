@@ -1,7 +1,7 @@
 """Main ticket availability checker logic."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from .browser import AlhambraBrowser, DateAvailability, TicketStatus
@@ -18,11 +18,16 @@ logger = logging.getLogger(__name__)
 class CheckResult:
     """Result of a ticket availability check."""
 
-    date: date
-    status: TicketStatus
-    is_available: bool
-    notification_sent: bool
+    dates: list[date]
+    results: list[DateAvailability] = field(default_factory=list)
+    available_dates: list[DateAvailability] = field(default_factory=list)
+    notification_sent: bool = False
     error: str | None = None
+
+    @property
+    def is_available(self) -> bool:
+        """Check if any date is available."""
+        return len(self.available_dates) > 0
 
 
 class AlhambraChecker:
@@ -42,7 +47,7 @@ class AlhambraChecker:
         )
 
     async def check_availability(self, dry_run: bool = False) -> CheckResult:
-        """Check ticket availability for the target date.
+        """Check ticket availability for the target dates.
 
         Args:
             dry_run: If True, don't send notifications.
@@ -50,8 +55,9 @@ class AlhambraChecker:
         Returns:
             CheckResult with the outcome.
         """
-        target_date = self.settings.target_date
-        logger.info("Starting availability check for %s", target_date)
+        target_dates = self.settings.target_dates
+        dates_str = ", ".join(d.isoformat() for d in target_dates)
+        logger.info("Starting availability check for %s", dates_str)
 
         try:
             async with AlhambraBrowser(
@@ -73,84 +79,60 @@ class AlhambraChecker:
                 await browser.inject_captcha_token(captcha_token)
                 await browser.click_go_to_step1()
 
-                # Step 4: Navigate to target month
-                await browser.navigate_to_month(target_date)
+                # Step 4: Navigate to target month (all dates are in same month)
+                await browser.navigate_to_month(target_dates[0])
 
-                # Step 5: Check date availability
-                availability = await browser.check_date_availability(target_date)
+                # Step 5: Check all dates availability
+                results = await browser.check_dates_availability(target_dates)
 
-                # Step 6: Send notification if available
+                # Step 6: Filter available dates
+                available_dates = [
+                    r for r in results
+                    if r.status in (TicketStatus.AVAILABLE, TicketStatus.LAST_TICKETS)
+                ]
+
+                # Step 7: Send notification if any available
                 notification_sent = False
-                if self._should_notify(availability) and not dry_run:
-                    await self._send_notification(availability)
+                if available_dates and not dry_run:
+                    await self._send_notification(available_dates)
                     notification_sent = True
 
                 return CheckResult(
-                    date=target_date,
-                    status=availability.status,
-                    is_available=availability.status in (
-                        TicketStatus.AVAILABLE,
-                        TicketStatus.LAST_TICKETS,
-                    ),
+                    dates=target_dates,
+                    results=results,
+                    available_dates=available_dates,
                     notification_sent=notification_sent,
                 )
 
         except CaptchaError as e:
             logger.error("Captcha error: %s", e)
             return CheckResult(
-                date=target_date,
-                status=TicketStatus.UNKNOWN,
-                is_available=False,
-                notification_sent=False,
+                dates=target_dates,
                 error=f"Captcha error: {e}",
             )
         except NotificationError as e:
             logger.error("Notification error: %s", e)
             return CheckResult(
-                date=target_date,
-                status=TicketStatus.UNKNOWN,
-                is_available=False,
-                notification_sent=False,
+                dates=target_dates,
                 error=f"Notification error: {e}",
             )
         except Exception as e:
             logger.exception("Unexpected error during check")
             return CheckResult(
-                date=target_date,
-                status=TicketStatus.UNKNOWN,
-                is_available=False,
-                notification_sent=False,
+                dates=target_dates,
                 error=str(e),
             )
 
-    def _should_notify(self, availability: DateAvailability) -> bool:
-        """Determine if a notification should be sent.
+    async def _send_notification(
+        self, available_dates: list[DateAvailability]
+    ) -> None:
+        """Send a Telegram notification for available dates.
 
         Args:
-            availability: The date availability information.
-
-        Returns:
-            True if notification should be sent.
+            available_dates: List of available date information.
         """
-        return availability.status in (
-            TicketStatus.AVAILABLE,
-            TicketStatus.LAST_TICKETS,
-        )
-
-    async def _send_notification(self, availability: DateAvailability) -> None:
-        """Send a Telegram notification for availability.
-
-        Args:
-            availability: The date availability information.
-        """
-        status_text = (
-            "Available" if availability.status == TicketStatus.AVAILABLE
-            else "Last Tickets!"
-        )
-
         await self._notifier.send_availability_alert(
-            target_date=availability.date,
-            status=status_text,
+            available_dates=available_dates,
             ticket_type=self.settings.ticket_type,
         )
 

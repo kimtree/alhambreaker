@@ -16,7 +16,7 @@ def mock_settings() -> Settings:
         captcha_api_key="test_captcha_key",
         telegram_bot_token="test_bot_token",
         telegram_chat_id="123456789",
-        target_date=date(2026, 2, 17),
+        TARGET_DATES="2026-02-17",
         ticket_type="GENERAL",
         headless=True,
         browser_timeout=30000,
@@ -55,6 +55,7 @@ def mock_browser():
     browser.click_go_to_step1 = AsyncMock()
     browser.navigate_to_month = AsyncMock()
     browser.check_date_availability = AsyncMock()
+    browser.check_dates_availability = AsyncMock()
     browser.get_page_url = AsyncMock(return_value="https://example.com")
     return browser
 

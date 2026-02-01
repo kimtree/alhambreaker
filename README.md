@@ -59,8 +59,8 @@ CAPTCHA_API_KEY=your_2captcha_api_key
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
-# Target Date to Monitor (required, YYYY-MM-DD format)
-TARGET_DATE=2026-02-17
+# Target Dates to Monitor (required, comma-separated YYYY-MM-DD, must be same month)
+TARGET_DATES=2026-02-17,2026-02-18,2026-02-20
 
 # Ticket Type (optional, default: GENERAL)
 TICKET_TYPE=GENERAL

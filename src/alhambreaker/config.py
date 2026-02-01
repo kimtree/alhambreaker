@@ -1,9 +1,9 @@
 """Configuration management using pydantic-settings."""
 
 from datetime import date
-from functools import lru_cache
+from functools import cached_property, lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 __all__ = ["Settings", "get_settings"]
@@ -25,9 +25,28 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field(description="Telegram bot token")
     telegram_chat_id: str = Field(description="Telegram chat ID")
 
-    # Monitoring
-    target_date: date = Field(description="Target date to monitor (YYYY-MM-DD)")
+    # Monitoring - stored as string, parsed via property
+    target_dates_str: str = Field(
+        alias="TARGET_DATES",
+        description="Target dates to monitor (comma-separated YYYY-MM-DD)",
+    )
     ticket_type: str = Field(default="GENERAL", description="Ticket type")
+
+    @cached_property
+    def target_dates(self) -> list[date]:
+        """Parse target dates from string."""
+        return [date.fromisoformat(d.strip()) for d in self.target_dates_str.split(",")]
+
+    @model_validator(mode="after")
+    def validate_same_month(self) -> "Settings":
+        """Ensure all target dates are in the same month."""
+        dates = self.target_dates
+        if len(dates) > 1:
+            first = dates[0]
+            for d in dates[1:]:
+                if d.year != first.year or d.month != first.month:
+                    raise ValueError("All target dates must be in the same month")
+        return self
 
     # Browser
     headless: bool = Field(default=True, description="Run browser in headless mode")

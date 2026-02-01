@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from alhambreaker.browser import DateAvailability, TicketStatus
 from alhambreaker.notifier import NotificationError, TelegramNotifier
 
 
@@ -35,10 +36,17 @@ class TestTelegramNotifier:
 
         mocker.patch("httpx.AsyncClient", return_value=mock_client)
 
+        available_dates = [
+            DateAvailability(
+                date=date(2026, 2, 17),
+                status=TicketStatus.AVAILABLE,
+                has_link=True,
+            )
+        ]
+
         notifier = TelegramNotifier(bot_token="test_token", chat_id="123456")
         await notifier.send_availability_alert(
-            target_date=date(2026, 2, 17),
-            status="Available",
+            available_dates=available_dates,
             ticket_type="GENERAL",
         )
 
@@ -49,6 +57,46 @@ class TestTelegramNotifier:
         assert payload["chat_id"] == "123456"
         assert "2026-02-17" in payload["text"]
         assert "Available" in payload["text"]
+
+    @pytest.mark.asyncio
+    async def test_send_availability_alert_multiple_dates(self, mocker):
+        """Test availability alert with multiple dates."""
+        mock_response = mocker.MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True, "result": {}}
+
+        mock_client = mocker.MagicMock()
+        mock_client.__aenter__ = mocker.AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = mocker.AsyncMock(return_value=None)
+        mock_client.post = mocker.AsyncMock(return_value=mock_response)
+
+        mocker.patch("httpx.AsyncClient", return_value=mock_client)
+
+        available_dates = [
+            DateAvailability(
+                date=date(2026, 2, 17),
+                status=TicketStatus.AVAILABLE,
+                has_link=True,
+            ),
+            DateAvailability(
+                date=date(2026, 2, 20),
+                status=TicketStatus.LAST_TICKETS,
+                has_link=True,
+            ),
+        ]
+
+        notifier = TelegramNotifier(bot_token="test_token", chat_id="123456")
+        await notifier.send_availability_alert(
+            available_dates=available_dates,
+            ticket_type="GENERAL",
+        )
+
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        payload = call_args[1]["json"]
+        assert "2026-02-17" in payload["text"]
+        assert "2026-02-20" in payload["text"]
+        assert "Last Tickets" in payload["text"]
 
     @pytest.mark.asyncio
     async def test_send_availability_alert_failure(self, mocker):
@@ -67,13 +115,18 @@ class TestTelegramNotifier:
 
         mocker.patch("httpx.AsyncClient", return_value=mock_client)
 
+        available_dates = [
+            DateAvailability(
+                date=date(2026, 2, 17),
+                status=TicketStatus.AVAILABLE,
+                has_link=True,
+            )
+        ]
+
         notifier = TelegramNotifier(bot_token="test_token", chat_id="invalid")
 
         with pytest.raises(NotificationError) as exc_info:
-            await notifier.send_availability_alert(
-                target_date=date(2026, 2, 17),
-                status="Available",
-            )
+            await notifier.send_availability_alert(available_dates=available_dates)
 
         assert "chat not found" in str(exc_info.value)
 
